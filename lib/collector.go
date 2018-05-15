@@ -66,8 +66,10 @@ func (c *pkgCache) IsResolved(importPath string) (ok bool, pkg *Pkg) {
 	return
 }
 
-func (c *pkgCache) Remove(importPath string) {
-	delete(c.resolved, importPath)
+func (c *pkgCache) Remove(pkg *Pkg) {
+	delete(c.resolved, pkg.ImportPath)
+	dir := pkg.ToDir()
+	delete(c.dirIndex, dir)
 }
 
 func (c *pkgCache) Reject(importPath, dir string) {
@@ -125,71 +127,6 @@ func normalizeGofiles(pwd string, files []string) ([]string, error) {
 	return normalizes, nil
 }
 
-// 获取go文件依赖的包
-func getDependencies(srcPkg *Pkg, srcDir string, imports []string, filter Filter, recurse bool) error {
-	cache := srcPkg.cache
-	for _, file := range imports {
-		// 已过滤
-		if cache.IsRejected(file) {
-			continue
-		}
-
-		// 已添加
-		if _, ok := srcPkg.Dep[file]; ok {
-			continue
-		}
-
-		// 是否已经缓存
-		if ok, cachePkg := cache.IsResolved(file); ok {
-			// 已缓存, 不需要向下遍历
-			srcPkg.Dep[file] = cachePkg
-			cachePkg.ref++
-			continue
-		}
-
-		// 导入文件
-		pkg, err := build.Import(file, srcDir, 0)
-		if err != nil {
-			return err
-		}
-
-		// 过滤: 排除GOROOT 导入, 自定义过滤器过滤
-		if pkg.Goroot || !filter(pkg) {
-			cache.Reject(file, pkg.Dir)
-			continue
-		}
-
-		curPkg := &Pkg{
-			Name:       pkg.Name,
-			ImportPath: pkg.ImportPath,
-			Dir:        pkg.Dir,
-			Dep:        make(map[string]*Pkg),
-			Imports:    pkg.Imports,
-			cache:      srcPkg.cache,
-		}
-
-		// 递归
-		srcPkg.Dep[file] = curPkg
-		cache.Resolve(file, curPkg)
-		fmt.Println(pkg.Name)
-		fmt.Println(pkg.ImportPath)
-		fmt.Println(pkg.Dir)
-		fmt.Println(pkg.Root)
-		fmt.Println(pkg.SrcRoot)
-		fmt.Println(pkg.PkgTargetRoot)
-		fmt.Println(pkg.BinDir)
-		fmt.Println(pkg.PkgObj)
-		fmt.Println(pkg.Imports)
-		if recurse {
-			err = getDependencies(curPkg, pkg.Dir, pkg.Imports, filter, recurse)
-			if err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
 // 解析go文件, 获取其中的导入
 func getGoFilesImports(file string) (name string, imports []string, err error) {
 	fset := token.NewFileSet()
@@ -214,36 +151,79 @@ type CollectOption struct {
 // Collector 依赖收集/更新器
 type Collector struct {
 	// 依赖树
-	pkg     *Pkg
-	cache   *pkgCache
-	pwd     string
+	pkg *Pkg
+	// 缓存
+	cache *pkgCache
+	// 工作目录
+	pwd string
+	// main文件
 	gofiles []string
-	option  *CollectOption
+	// 选项
+	option *CollectOption
+	// 依赖过滤器
+	filter Filter
 }
 
-// 依赖过滤
-// TODO: 优化, 不要每次获取都创建
-func (c *Collector) filter() Filter {
-	return filterCompose(
-		// ignore vendor
-		func(pkg *build.Package) bool {
-			if c.option.IgnoreVendor {
-				if strings.Contains(filepath.Dir(pkg.ImportPath), "vendor") {
-					return false
-				}
+// 获取go文件依赖的包
+func (c *Collector) getDependencies(srcPkg *Pkg, imports []string, recurse bool) error {
+	cache := srcPkg.cache
+	for _, file := range imports {
+		// 已过滤
+		if cache.IsRejected(file) {
+			continue
+		}
+
+		// 已添加
+		if _, ok := srcPkg.Dep[file]; ok {
+			continue
+		}
+
+		// 是否已经缓存
+		if ok, cachePkg := cache.IsResolved(file); ok {
+			// 已缓存, 不需要向下遍历
+			srcPkg.Dep[file] = cachePkg
+			cachePkg.ref++
+			continue
+		}
+
+		// 导入文件
+		pkg, err := build.Import(file, srcPkg.Dir, 0)
+		if err != nil {
+			return err
+		}
+
+		// 过滤: 排除GOROOT 导入, 自定义过滤器过滤
+		if pkg.Goroot || !c.filter(pkg) {
+			cache.Reject(file, pkg.Dir)
+			continue
+		}
+
+		curPkg := &Pkg{
+			Name:       pkg.Name,
+			ImportPath: pkg.ImportPath,
+			Dir:        pkg.Dir,
+			Dep:        make(map[string]*Pkg),
+			Imports:    pkg.Imports,
+			cache:      srcPkg.cache,
+		}
+
+		// 递归
+		srcPkg.Dep[file] = curPkg
+		cache.Resolve(file, curPkg)
+		log.Printf("detect dependency(%s)", curPkg.ImportPath)
+		if recurse {
+			err = c.getDependencies(curPkg, pkg.Imports, recurse)
+			if err != nil {
+				return err
 			}
-			return true
-		},
-		// ignore pacakges out of pwd
-		func(pkg *build.Package) bool {
-			return filepath.HasPrefix(pkg.Dir, c.pwd)
-		})
+		}
+	}
+	return nil
 }
 
 // 初始化依赖树
 func (c *Collector) initDeps() error {
 	var pkgCache = c.cache
-	var filter = c.filter()
 	var pkg *Pkg
 	var mainImports = make(map[string]struct{})
 
@@ -274,7 +254,7 @@ func (c *Collector) initDeps() error {
 			mainImports[importPath] = noopStruct
 		}
 
-		err = getDependencies(pkg, c.pwd, imports, filter, true)
+		err = c.getDependencies(pkg, imports, true)
 
 		if err != nil {
 			return err
@@ -305,6 +285,9 @@ type DepUpdate struct {
 }
 
 // Update 文件变动，需要重新计算依赖，并获取需要移除和添加的目录监听列表
+// 更新方法:
+// * 文件更新：获取go文件对应的dir（一个go文件一定属于一个目录，一个目录的所有文件都属于
+// 同一个包）, 然后在获取到dir关联的Pkg对象。重新导入该包，计算其新增或删除的依赖
 func (c *Collector) Update(files []string) (*DepUpdate, error) {
 	var mainUpdated bool
 	oldWatchs := c.GetWatchDirs()
@@ -313,12 +296,14 @@ func (c *Collector) Update(files []string) (*DepUpdate, error) {
 		dir := filepath.Dir(file)
 		pkg := c.cache.GetPkgByDir(dir)
 		if pkg == nil {
-			// 新目录，未在列表中, 一般情况下不会出现，因为只有被监听过后的才会有可能被更新
-			// 即目录一定被添加在索引中。这种情况可能是一个目录中新增了目录或者文件
+			// 新目录，未在列表中, 这种情况可能是一个已监视目录中新增了目录
+			// 处理方法是重新尝试对父目录所在的包进行更新. 或者不需要处理, 等待这个目录表示的包
+			// 被已监视的包导入
 			// TODO: 更新其父目录
 			log.Printf("warning: unkown update for %s", dir)
 			continue
 		} else {
+			log.Printf("update dependencies for package(%s)", pkg.ImportPath)
 			// 在索引中，重新解析包
 			if pkg.ImportPath == "main" {
 				// main 包，需要统一重新解析gofiles
@@ -355,8 +340,12 @@ func (c *Collector) removeImport(pkg *Pkg, importPath string) {
 	if dep, ok := pkg.Dep[importPath]; ok {
 		// 无其他包引用
 		if dep.ref == 0 {
+			log.Printf("remove dependency(%s)", importPath)
 			delete(pkg.Dep, importPath)
-			c.cache.Remove(importPath)
+			c.cache.Remove(dep)
+			for _, subDep := range dep.Dep {
+				c.removeImport(dep, subDep.ImportPath)
+			}
 			return
 		}
 		dep.ref--
@@ -393,7 +382,7 @@ func (c *Collector) updatePkg(pkg *Pkg) error {
 	if err != nil {
 		return err
 	}
-	err = getDependencies(pkg, pkg.Dir, newPkg.Imports, c.filter(), false)
+	err = c.getDependencies(pkg, newPkg.Imports, false)
 	if err != nil {
 		return err
 	}
@@ -416,7 +405,7 @@ func (c *Collector) updateMainImports() error {
 
 		newImports = append(newImports, imports...)
 
-		err = getDependencies(c.pkg, c.pkg.Dir, imports, c.filter(), false)
+		err = c.getDependencies(c.pkg, imports, false)
 		if err != nil {
 			return err
 		}
@@ -433,6 +422,12 @@ func NewCollector(pwd string, gofiles []string, option *CollectOption) (*Collect
 		return nil, errors.New("pwd is not absoluted directory")
 	}
 
+	if option == nil {
+		option = &CollectOption{
+			IgnoreVendor: true,
+		}
+	}
+
 	gofiles, err := normalizeGofiles(pwd, gofiles)
 
 	if err != nil {
@@ -445,6 +440,21 @@ func NewCollector(pwd string, gofiles []string, option *CollectOption) (*Collect
 		option:  option,
 		cache:   newPkgCache(),
 	}
+
+	collector.filter = filterCompose(
+		// ignore vendor
+		func(pkg *build.Package) bool {
+			if option.IgnoreVendor {
+				if strings.Contains(filepath.Dir(pkg.ImportPath), "vendor") {
+					return false
+				}
+			}
+			return true
+		},
+		// ignore pacakges out of pwd
+		func(pkg *build.Package) bool {
+			return filepath.HasPrefix(pkg.Dir, pwd)
+		})
 
 	err = collector.initDeps()
 	if err != nil {
