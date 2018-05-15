@@ -8,7 +8,6 @@ import (
 	"go/build"
 	"go/parser"
 	"go/token"
-	"log"
 	"path/filepath"
 	"strings"
 )
@@ -210,7 +209,7 @@ func (c *Collector) getDependencies(srcPkg *Pkg, imports []string, recurse bool)
 		// 递归
 		srcPkg.Dep[file] = curPkg
 		cache.Resolve(file, curPkg)
-		log.Printf("detect dependency(%s)", curPkg.ImportPath)
+		Printf("detect dependency(%s)", curPkg.ImportPath)
 		if recurse {
 			err = c.getDependencies(curPkg, pkg.Imports, recurse)
 			if err != nil {
@@ -300,10 +299,10 @@ func (c *Collector) Update(files []string) (*DepUpdate, error) {
 			// 处理方法是重新尝试对父目录所在的包进行更新. 或者不需要处理, 等待这个目录表示的包
 			// 被已监视的包导入
 			// TODO: 更新其父目录
-			log.Printf("warning: unkown update for %s", dir)
+			Printf("warning: unkown update for %s", dir)
 			continue
 		} else {
-			log.Printf("update dependencies for package(%s)", pkg.ImportPath)
+			Printf("update dependencies for package(%s)", pkg.ImportPath)
 			// 在索引中，重新解析包
 			if pkg.ImportPath == "main" {
 				// main 包，需要统一重新解析gofiles
@@ -340,7 +339,7 @@ func (c *Collector) removeImport(pkg *Pkg, importPath string) {
 	if dep, ok := pkg.Dep[importPath]; ok {
 		// 无其他包引用
 		if dep.ref == 0 {
-			log.Printf("remove dependency(%s)", importPath)
+			Printf("remove dependency(%s)", importPath)
 			delete(pkg.Dep, importPath)
 			c.cache.Remove(dep)
 			for _, subDep := range dep.Dep {

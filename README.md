@@ -1,5 +1,7 @@
 # gorun
 
+Empower `go run` with live reload
+
 ## Install
 
 ```shell
@@ -8,4 +10,24 @@ go get github.com/carney520/gorun
 
 ## Usage
 
-* run like `go run`, but watch dependencies file and live rebuild: `gorun ./*.go`
+Run compiles and runs the main package comprising the named Go source files.
+A Go source file is defined to be a file ending in a literal ".go" suffix.
+
+Gorun will generate dependencies upon gofiles, and use Fsnotify to watch the
+package dir. When go file changed in watched dir, will reimport related package,
+add new or remove unused package from the watching list. In the end, gorun will
+rerun 'go run'.
+
+```shell
+# proxy all arguments to go run
+gorun -x *.go
+
+# more info see
+gorun -h
+```
+
+## License
+
+MIT License
+
+Copyright (c) 2018 carney

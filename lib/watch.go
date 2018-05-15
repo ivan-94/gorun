@@ -39,7 +39,7 @@ func (w *Watcher) updateWatchDir(update *DepUpdate) error {
 		if err != nil {
 			return err
 		}
-		log.Printf("watching: %s\n", added)
+		Printf("watching: %s\n", added)
 	}
 
 	for _, removed := range update.Removed {
@@ -47,7 +47,7 @@ func (w *Watcher) updateWatchDir(update *DepUpdate) error {
 		if err != nil {
 			return err
 		}
-		log.Printf("stop watch: %s", removed)
+		Printf("stop watch: %s", removed)
 	}
 
 	return nil
@@ -66,9 +66,9 @@ func NewWatcher(initWatchDir []string, update Updater) (*Watcher, error) {
 		done:    make(chan struct{}),
 	}
 
-	log.Printf("initialize watcher")
+	Printf("initialize watcher")
 	for _, path := range initWatchDir {
-		log.Printf("watching: %s\n", path)
+		Printf("watching: %s\n", path)
 		err := watcher.Add(path)
 		if err != nil {
 			log.Printf("failed to watch %s", path)
@@ -88,7 +88,7 @@ func NewWatcher(initWatchDir []string, update Updater) (*Watcher, error) {
 			if len(files) > 1 {
 				files = StringSliceUniq(files)
 			}
-			log.Printf("change: %s", files)
+			Printf("change: %s", files)
 			// update
 			depUpdate := update(files)
 			fsWatcher.updateWatchDir(depUpdate)

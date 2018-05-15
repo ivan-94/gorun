@@ -29,13 +29,13 @@ func (r *Runner) Run() {
 func (r *Runner) Kill() {
 	defer func() {
 		if e := recover(); e != nil {
-			log.Printf("kill recover")
+			Printf("kill recover")
 		}
 	}()
 	if r.cmd != nil && r.cmd.Process != nil {
 		err := r.cmd.Process.Kill()
 		if err != nil {
-			log.Printf("error when kill `go run`: %s\n", err)
+			Printf("error when kill `go run`: %s\n", err)
 		}
 	}
 }

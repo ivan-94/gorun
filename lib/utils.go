@@ -1,5 +1,21 @@
 package gorun
 
+import "log"
+
+var verbose bool
+
+// Printf Wrapper for log.Printf
+func Printf(format string, v ...interface{}) {
+	if verbose {
+		log.Printf(format, v...)
+	}
+}
+
+// SetVerbose enable verbose mode
+func SetVerbose() {
+	verbose = true
+}
+
 // StringSliceDiff a - b
 func StringSliceDiff(a, b []string) []string {
 	arr := []string{}
