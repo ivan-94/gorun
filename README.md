@@ -19,12 +19,16 @@ add new or remove unused package from the watching list. In the end, gorun will
 rerun 'go run'.
 
 ```shell
-# proxy all arguments to go run
-gorun -x *.go
-
-# more info see
-gorun -h
+# Proxy all flags after '--' to `go run`
+gorun -ignoreVendor=false -- -x *.go
 ```
+
+### Options
+
+* -entry=PATH: Set watch scope, package out of this path will be ignore. Default is current work directory
+* -ignoreVendor: Ignore pacakges in `vendor`. Default is true
+* -printDeps: Just print the pacakges will be watch.
+* -debug: Debug mode. print verbose messages
 
 ## License
 

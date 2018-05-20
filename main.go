@@ -27,7 +27,7 @@ func init() {
 	flagset = flag.NewFlagSet("gorun", flag.ExitOnError)
 	flagset.Usage = func() {
 		fmt.Println(
-			`usage: gorun [build flags] [gorun flags] [-exec xprog] gofiles... [arguments...]
+			`usage: gorun [gorun flags] -- [build flags][-exec xprog] gofiles... [arguments...]
 
 Run compiles and runs the main package comprising the named Go source files.
 A Go source file is defined to be a file ending in a literal ".go" suffix.
@@ -37,7 +37,7 @@ package dir. When go file changed in watched dir, will reimport related package,
 add new or remove unused package from the watching list. In the end, gorun will 
 rerun 'go run'.
 
-Extended flags:`)
+gorun flags:`)
 		flagset.PrintDefaults()
 		fmt.Println("For more about 'go run', see 'go run -h'.")
 	}
