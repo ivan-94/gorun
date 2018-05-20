@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 
 	"github.com/carney520/gorun/lib"
 )
@@ -113,8 +115,15 @@ func main() {
 		log.Fatalf("failed to watch files: %s\n", err)
 	}
 
+	exit := make(chan struct{})
+	sigchan := make(chan os.Signal, 1)
+	signal.Notify(sigchan, syscall.SIGINT, syscall.SIGHUP, syscall.SIGSTOP, syscall.SIGQUIT)
+
 	runner.Run()
 
-	exit := make(chan struct{})
-	<-exit
+	select {
+	case <-exit:
+	case <-sigchan:
+		runner.Kill()
+	}
 }
